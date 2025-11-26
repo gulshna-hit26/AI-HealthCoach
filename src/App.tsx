@@ -3,7 +3,7 @@ import './App.css'
 
 
 // MotionStepTracker.tsx
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
  function MotionStepTracker() {
   const [steps, setSteps] = useState(0);
