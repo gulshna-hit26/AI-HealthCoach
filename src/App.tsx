@@ -1,21 +1,18 @@
-
+// App.tsx
 import './App.css'
-
-
-// MotionStepTracker.tsx
 import { useEffect, useRef, useState } from 'react';
 
- function MotionStepTracker() {
+function MotionStepTracker() {
   const [steps, setSteps] = useState(0);
   const [permission, setPermission] = useState<'unknown'|'granted'|'denied'>('unknown');
   const lastPeakTs = useRef(0);
   const lastAcc = useRef<number[]>([]);
-  const threshold = 1.2; // tune per device
+  const threshold = 8; // tuned for walking peaks
   const minStepIntervalMs = 300; // reject rapid false peaks
+  const [aboveThreshold, setAboveThreshold] = useState(false);
 
   const requestPermission = async () => {
     try {
-      // iOS Safari requires explicit permission
       const anyWindow = window as any;
       if (typeof anyWindow.DeviceMotionEvent?.requestPermission === 'function') {
         const res = await anyWindow.DeviceMotionEvent.requestPermission();
@@ -32,53 +29,69 @@ import { useEffect, useRef, useState } from 'react';
     if (permission !== 'granted') return;
 
     const handler = (e: DeviceMotionEvent) => {
-      // Prefer accelerationIncludingGravity; subtract gravity if possible
-      const ax = e.accelerationIncludingGravity?.x ?? 0;
-      const ay = e.accelerationIncludingGravity?.y ?? 0;
-      const az = e.accelerationIncludingGravity?.z ?? 0;
+      // Prefer acceleration without gravity if available
+      const ax = e.acceleration?.x ?? e.accelerationIncludingGravity?.x ?? 0;
+      const ay = e.acceleration?.y ?? e.accelerationIncludingGravity?.y ?? 0;
+      const az = e.acceleration?.z ?? e.accelerationIncludingGravity?.z ?? 0;
+
       // magnitude
       const mag = Math.sqrt(ax*ax + ay*ay + az*az);
 
-      // simple smoothing
+      // smoothing (average of last 20 samples)
       lastAcc.current.push(mag);
-      if (lastAcc.current.length > 5) lastAcc.current.shift();
+      if (lastAcc.current.length > 20) lastAcc.current.shift();
       const avg = lastAcc.current.reduce((a,b)=>a+b,0) / lastAcc.current.length;
 
-      // peak detection
       const now = Date.now();
-      if (avg > threshold && now - lastPeakTs.current > minStepIntervalMs) {
+
+      // peak detection with valley check
+      if (avg > threshold && !aboveThreshold && now - lastPeakTs.current > minStepIntervalMs) {
+        setAboveThreshold(true);
         lastPeakTs.current = now;
         setSteps(s => s + 1);
+      } else if (avg < threshold * 0.5) {
+        // reset once we drop below half threshold
+        setAboveThreshold(false);
       }
     };
 
-    window.addEventListener('devicemotion', handler);
-    return () => window.removeEventListener('devicemotion', handler);
-  }, [permission]);
+    window.addEventListener('devicemotion', handler, { capture: true });
+    return () => window.removeEventListener('devicemotion', handler, { capture: true });
+  }, [permission, aboveThreshold]);
+
+  const resetSteps = () => setSteps(0);
 
   return (
-    <div>
-      <h3>Steps: {steps}</h3>
+    <div className="p-4">
+      <h3 className="text-xl font-bold">Steps: {steps}</h3>
       {permission !== 'granted' && (
-        <button onClick={requestPermission}>Enable motion tracking</button>
+        <button 
+          onClick={requestPermission}
+          className="bg-blue-500 text-white px-4 py-2 rounded mt-2"
+        >
+          Enable Motion Tracking
+        </button>
       )}
-      <p style={{fontSize:12, color:'#666'}}>
-        Move with the phone in your pocket/hand. Accuracy varies by device. 
+      <button 
+        onClick={resetSteps}
+        className="bg-red-500 text-white px-4 py-2 rounded mt-2 ml-2"
+      >
+        Reset
+      </button>
+      <p className="text-sm text-gray-600 mt-2">
+        Move with the phone in your pocket/hand. Accuracy varies by device.
       </p>
     </div>
   );
 }
 
-
 function App() {
-
-
   return (
     <>
-    <MotionStepTracker/>
+      <MotionStepTracker/>
       <h1 className='bg-blue-200'>hello</h1>
     </>
   )
 }
 
-export default App
+export default App;
